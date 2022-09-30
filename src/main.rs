@@ -78,8 +78,8 @@ fn main() {
 
 		let tx = tx.clone();
 		pool.execute(move || {
-            if i % 1000000000 == 0 {
-                println!("iteration: {i}");
+            if i % 0x1000000 == 0 {
+                println!("iteration: {i:X}");
                 let key_hex_representation = rc4::u8_to_hex(&current_key.key_vec, current_key.key_vec.len() as u32);
                 println!("current key value: {key_hex_representation}");
             }
@@ -99,6 +99,10 @@ fn main() {
                 println!("key send");
             }
 		});
+        // ensure pool doesn't get overloaded with queued tasks
+        if i % 0x1000 == 0 {
+            pool.join();
+        }
 		rc4::change_key(&mut key, start_from_bottom);
 
         let received_val = rx.try_recv();
