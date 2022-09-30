@@ -33,28 +33,6 @@ fn swap_chars(vec: &mut Vec<u8>, i: usize, j: usize) {
 	vec[j] = temp;
 }
 
-pub fn subtract_one(key: &mut Vec<u8>, known_key_start: u32) {
-	for i in (0..=(known_key_start-1)).rev() {
-		if key[i as usize] == 0 {
-			key[i as usize] = 255;
-		} else {
-			key[i as usize] -= 1;
-			break;
-		}
-	}
-}
-
-pub fn add_one(key: &mut Vec<u8>, known_key_start: u32) {
-	for i in (0..=(known_key_start-1)).rev() {
-		if key[i as usize] == 255 {
-			key[i as usize] = 0;
-		} else {
-			key[i as usize] += 1;
-			break;
-		}
-	}
-}
-
 pub fn hex_to_u8(hex: &str, length: usize) -> Vec<u8> {
 	let mut u8_vec: Vec<u8> = Vec::new();
 
@@ -137,21 +115,6 @@ pub fn prga(s: &mut Vec<u8>, ks_length: u32, drop_n: u32) -> Vec<u8> {
 	return ks;
 }
 
-pub fn generate_key(known_key: &mut Vec<u8>, key_length: u32, bottom_up: bool) -> Vec<u8> {
-	let mut key: Vec<u8> = Vec::with_capacity(key_length as usize);
-
-	// generate unknown beginning of key
-	for _ in 0..(key_length - (known_key.len() as u32)) {
-		key.push(match bottom_up {
-			true => 0,
-			false => 255,
-		});
-	}
-
-	key.append(known_key);
-
-	return key;
-}
 pub fn compare_ks(calc_ks: &Vec<u8>, known_ks: &Vec<u8>) -> bool {
 	if calc_ks.len() != known_ks.len() {
 		return false;
@@ -163,14 +126,6 @@ pub fn compare_ks(calc_ks: &Vec<u8>, known_ks: &Vec<u8>) -> bool {
 		}
 	}
 	return true;
-}
-
-pub fn clone_key(key: &Vec<u8>) -> Vec<u8> {
-	let mut new_vec: Vec<u8> = Vec::with_capacity(key.len());
-	for i in 0..key.len() {
-		new_vec.push(*key.get(i).unwrap());
-	}
-	return new_vec;
 }
 
 pub fn mask_to_key(mask: &str, start_from_bottom: bool) -> Key {
@@ -237,51 +192,6 @@ mod tests {
 		let mut vec2 = vec![1, 2, 3, 4, 5];
 		swap_chars(&mut vec2, 2, 3);
 		assert_eq!(vec2[2], vec[3]);
-	}
-
-	#[test]
-	fn test_subtract_one_no_pull() {
-		let vec = vec![1, 2, 2, 4, 5];
-		let mut vec2 = vec![1, 2, 3, 4, 5];
-		subtract_one(&mut vec2, 3);
-		assert_eq!(vec, vec2);
-	}
-
-	#[test]
-	fn test_subtract_one_pull() {
-		let vec = vec![1, 1, 255, 4, 5];
-		let mut vec2 = vec![1, 2, 0, 4, 5];
-		subtract_one(&mut vec2, 3);
-		assert_eq!(vec, vec2);
-	}
-
-	#[test]
-	fn test_subtract_one_real_world() {
-		let hex_str: &str = "0x9884CEAD9878AD2D347D1612CC";
-		let mut u8_vec = hex_to_u8(hex_str, hex_str.len());
-		for _ in 0..1000000 {
-			subtract_one(&mut u8_vec, 5);
-		}
-		let hex_str2 = u8_to_hex(&u8_vec, u8_vec.len() as u32);
-		
-		let expected_hex2_val = "0x9884BF6B5878AD2D347D1612CC";
-		assert_eq!(hex_str2, expected_hex2_val);
-	}
-
-	#[test]
-	fn test_add_one_no_overflow() {
-		let vec = vec![1, 2, 4, 4, 5];
-		let mut vec2 = vec![1, 2, 3, 4, 5];
-		add_one(&mut vec2, 3);
-		assert_eq!(vec, vec2);
-	}
-
-	#[test]
-	fn test_add_one_overflow() {
-		let vec = vec![1, 3, 0, 4, 5];
-		let mut vec2 = vec![1, 2, 255, 4, 5];
-		add_one(&mut vec2, 3);
-		assert_eq!(vec, vec2);
 	}
 
 	#[test]
@@ -375,28 +285,6 @@ mod tests {
 
 		assert_eq!(ks, expected_ks);
 		assert_eq!(s, expected_s);
-	}
-
-	#[test]
-	fn test_key_gen_bottom_up() {
-		let mut known_key = vec![0, 9, 8, 7, 6, 5, 4, 3, 2, 1];
-		let key = generate_key(&mut known_key, 20, true);
-
-		let expected_key = vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
-								0, 9, 8, 7, 6, 5, 4, 3, 2, 1];
-
-		assert_eq!(key, expected_key);
-	}
-
-	#[test]
-	fn test_key_gen_top_down() {
-		let mut known_key = vec![0, 9, 8, 7, 6, 5, 4, 3, 2, 1];
-		let key = generate_key(&mut known_key, 20, false);
-
-		let expected_key = vec![255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-								0, 9, 8, 7, 6, 5, 4, 3, 2, 1];
-
-		assert_eq!(key, expected_key);
 	}
 
 	#[test]
