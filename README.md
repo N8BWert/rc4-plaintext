@@ -44,3 +44,12 @@ To run a plaintext attack against a 104-bit key of 0x??76??32??78AD2D348D16??CC 
 ```
 ./target/release/rc4_pt_attack "0x??76??32??78AD2D347D16??CC" "0xC5C593CB6AC6F419" false --drop_n=267 --gpu --threads=16 --blocks=8
 ```
+
+## GPU Support 
+#### Currently (experimental) GPU support is available for the following situations:
+1. 72 bit key --- 0 byte DropN
+2. 72 bit key --- 256 byte DropN
+3. 72 bit key --- 267 byte DropN
+4. 104 bit key --- 0 byte DropN
+5. 104 bit key --- 256 byte DropN
+6. 104 bit key --- 267 byte DropN
