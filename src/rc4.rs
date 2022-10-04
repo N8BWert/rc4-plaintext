@@ -1,4 +1,5 @@
 use std::vec::Vec;
+use std::collections::HashMap;
 
 pub struct Key {
 	pub key_vec: Vec<u8>,
@@ -182,41 +183,51 @@ pub fn change_key(key: &mut Key, add: bool) {
 	}
 }
 
-pub fn change_key_with_return(key: &mut Key, add: bool) -> Key {
-	let return_key = key.deep_copy();
-	change_key(key, add);
-	return return_key
-}
+fn check_long_u8_slice_for_keystream(slice: &[u8], keystream: &Vec<u8>) -> u128 {
+	for i in (0..slice.len()-1).step_by(8) {
+		'inner: for j in 0..8 {
+			let val1 = slice[i+j];
+			let val2 = keystream[j];
+			if val1 != val2 {
+				break 'inner;
+			}
 
-pub fn check_long_u8_slice_for_keystream(slice: &[u8], keystream: Vec<u8>) -> u128 {
-	for i in (0..slice.len()).step_by(8) {
-		for j in 0..8 {
-			if slice[i+j] != keystream[j] {
-				break;
+			if j == 7 {
+				return i as u128;
 			}
 		}
-		return i as u128;
 	}
 	return 0;
 }
 
-pub fn find_correct_key(keys: Vec<u8>, keystreams: Vec<u8>, task_order: Vec<usize>, end_order: Vec<usize>, desired_keystream: Vec<u8>, key_length: usize) -> Vec<u8> {
-	let correct_keystream_idx = check_long_u8_slice_for_keystream(&keystreams[..], desired_keystream);
-	let end_index = correct_keystream_idx / 8000000;
-	let found_task = end_order[end_index as usize];
-	let mut start_task_idx = 0;
-	for i in (0..=found_task).rev() {
-		if task_order[i] == found_task {
-			start_task_idx = i;
-			break;
+pub fn find_correct_key(keys: Vec<u8>, keystreams: Vec<u8>, send_order: Vec<usize>, recv_order: Vec<usize>, desired_keystream: Vec<u8>, key_length: usize, blocks: u128) -> Vec<u8> {
+	// example receive to send mapping:
+	// idx:  0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,15
+	// send: 0, 1, 2, 3, 4, 3, 2, 2, 1, 4, 0, X, X, X, X, X
+	// recv: X, X, X, X, X, 3, 2, 2, 1, 4, 0, 3, 2, 4, 0, 1
+	// sndx: X, X, X, X, X, 3, 2, 6, 1, 4, 0, 5, 7, 9,10, 8
+	let match_idx = check_long_u8_slice_for_keystream(&keystreams[..], &desired_keystream);
+	let group_idx = match_idx / 8000000;
+	let rel_send_group_idx = group_idx + 5;
+
+	// populate hashmap
+	let mut send_group_val_to_last_idx = HashMap::new();
+	if rel_send_group_idx >= (send_order.len() as u128) {
+		for i in 0..send_order.len() {
+			send_group_val_to_last_idx.insert(send_order[i], i);
+		}
+	} else {
+		for i in 0..(rel_send_group_idx as usize) {
+			send_group_val_to_last_idx.insert(send_order[i], i);
 		}
 	}
-	let key_start_idx = (key_length * start_task_idx) + (((correct_keystream_idx % 8000000) / 8) as usize);
-	let key_vec = Vec::with_capacity(key_length);
-	for i in 0..key_length {
-		key_vec.push(keys[key_start_idx + i]);
-	}
-	return key_vec;
+
+	let key_group = *send_group_val_to_last_idx.get(&recv_order[group_idx as usize]).unwrap();
+	let rel_idx = (match_idx % 8000000) / 8;
+
+	let key_start = ((key_group as u128) * (key_length as u128) * 1000000) + (rel_idx * (key_length as u128));
+
+	return keys[(key_start as usize)..((key_start as usize) + key_length)].to_vec();
 }
 
 #[cfg(test)]
@@ -452,6 +463,113 @@ mod tests {
 
 	#[test]
 	fn test_key_deep_copy() {
+		let key_vec = vec![1, 2, 3, 4, 5, 6];
+		let mask_vec = vec![1, 3, 4];
+		let key1 = Key {key_vec: key_vec, mask_vec: mask_vec};
 
+		let key2 = key1.deep_copy();
+		assert_eq!(key1.key_vec, key2.key_vec);
+		assert_eq!(key1.mask_vec, key2.mask_vec);
+	}
+
+	#[test]
+	fn test_check_long_u8_slice_for_keystream() {
+		let keystream_slice = vec![0, 1, 2, 3, 4, 5, 6, 7,
+							   8, 9, 10, 11, 12, 13, 14, 15,
+							   16, 17, 18, 19, 20, 21, 22, 23,
+							   24, 25, 26, 27, 28, 29, 30, 31,
+							   32, 33, 34, 35, 36, 37, 38, 39];
+		let desired_keystream = vec![16, 17, 18, 19, 20, 21, 22, 23];
+		let found_idx = check_long_u8_slice_for_keystream(&keystream_slice[..], &desired_keystream);
+
+		let expected_idx = 16;
+		assert_eq!(found_idx, expected_idx);
+	}
+
+	#[test]
+	fn test_find_correct_key() {
+		// send: 0, 1, 2, 3, 4, 3, 2, 2, 1, 4, 0, X, X, X, X, X
+		// recv: X, X, X, X, X, 3, 2, 2, 1, 4, 0, 3, 2, 4, 0, 1
+		//                                  ^ -send     ^ - 30th key in this receive
+		let key_length = 25;
+
+		// instantate all keys
+		let mut key_0 = vec![0u8; 1000000 * key_length];
+		let mut key_1 = vec![1u8; 1000000 * key_length];
+		let mut key_2 = vec![2u8; 1000000 * key_length];
+		let mut key_3 = vec![3u8; 1000000 * key_length];
+		let mut key_4 = vec![4u8; 1000000 * key_length];
+		let mut key_5 = vec![5u8; 1000000 * key_length];
+		let mut key_6 = vec![6u8; 1000000 * key_length];
+		let mut key_7 = vec![7u8; 1000000 * key_length];
+		let mut key_8 = vec![8u8; 1000000 * key_length];
+		let mut key_9 = vec![9u8; 1000000 * key_length];
+		let mut key_10 = vec![10u8; 1000000 * key_length];
+
+		// seed key at key_vec 9 key 30
+		for i in 0..key_length {
+			key_9[30*key_length + i] = 255;
+		}
+
+		// create send and receive order
+		let send_order = vec![0, 1, 2, 3, 4, 3, 2, 2, 1, 4, 0];
+		let recv_order = vec![3, 2, 2, 1, 4, 0, 3, 2, 4, 0, 1];
+
+		// concatinate key vectors
+		let mut keys = Vec::with_capacity(11 * 1000000 * key_length);
+		keys.append(&mut key_0);
+		keys.append(&mut key_1);
+		keys.append(&mut key_2);
+		keys.append(&mut key_3);
+		keys.append(&mut key_4);
+		keys.append(&mut key_5);
+		keys.append(&mut key_6);
+		keys.append(&mut key_7);
+		keys.append(&mut key_8);
+		keys.append(&mut key_9);
+		keys.append(&mut key_10);
+
+		// create desired keystream
+		let desired_keystream = vec![21u8; 8];
+
+		// create possible keystreams
+		let mut keystream_0 = vec![0u8; 1000000 * 8];
+		let mut keystream_1 = vec![0u8; 1000000 * 8];
+		let mut keystream_2 = vec![0u8; 1000000 * 8];
+		let mut keystream_3 = vec![0u8; 1000000 * 8];
+		let mut keystream_4 = vec![0u8; 1000000 * 8];
+		let mut keystream_5 = vec![0u8; 1000000 * 8];
+		let mut keystream_6 = vec![0u8; 1000000 * 8];
+		let mut keystream_7 = vec![0u8; 1000000 * 8];
+		let mut keystream_8 = vec![0u8; 1000000 * 8];
+		let mut keystream_9 = vec![0u8; 1000000 * 8];
+		let mut keystream_10 = vec![0u8; 1000000 * 8];
+
+		// create desired keystream and seed
+		for i in 0..8 {
+			keystream_9[30 * 8 + i] = 255;
+		}
+		let desired_keystream = vec![255u8; 8];
+
+		// concatinate the keystreamsi n the way they will be recieved
+		let mut keystreams = Vec::with_capacity(11 * 1000000 * 8);
+
+		keystreams.append(&mut keystream_3);
+		keystreams.append(&mut keystream_2);
+		keystreams.append(&mut keystream_6);
+		keystreams.append(&mut keystream_1);
+		keystreams.append(&mut keystream_4);
+		keystreams.append(&mut keystream_0);
+		keystreams.append(&mut keystream_5);
+		keystreams.append(&mut keystream_7);
+		keystreams.append(&mut keystream_9);
+		keystreams.append(&mut keystream_10);
+		keystreams.append(&mut keystream_8);
+
+		let found_key = find_correct_key(keys, keystreams, send_order, recv_order, desired_keystream, key_length, 5);
+
+		let expected_key = vec![255u8; key_length];
+
+		assert_eq!(found_key, expected_key);
 	}
 }
