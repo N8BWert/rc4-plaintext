@@ -301,10 +301,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                     keystream_buffers[i] = DeviceBuffer::from_slice(&[0u8; 8000000]).unwrap();
                     let stream = Stream::new(StreamFlags::NON_BLOCKING, None)?;
                     stream.add_callback(Box::new(|status| {
+                        println!("Device status is {:?}", status);
                         match status {
-                            _cuda_error => panic!("Device status is {:?}", status),
-                            _ => streams_done[i] = true,
-                        }
+                            Ok(_) => streams_done[i] = true,
+                            Err(_) => panic!("error with device"),
+                        };
                     }));
 
                     unsafe {

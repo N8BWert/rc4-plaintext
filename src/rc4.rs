@@ -208,7 +208,7 @@ pub fn find_correct_key(keys: Vec<u8>, keystreams: Vec<u8>, send_order: Vec<usiz
 	// sndx: X, X, X, X, X, 3, 2, 6, 1, 4, 0, 5, 7, 9,10, 8
 	let match_idx = check_long_u8_slice_for_keystream(&keystreams[..], &desired_keystream);
 	let group_idx = match_idx / 8000000;
-	let rel_send_group_idx = group_idx + 5;
+	let rel_send_group_idx = group_idx + blocks;
 
 	// populate hashmap
 	let mut send_group_val_to_last_idx = HashMap::new();
@@ -528,9 +528,6 @@ mod tests {
 		keys.append(&mut key_8);
 		keys.append(&mut key_9);
 		keys.append(&mut key_10);
-
-		// create desired keystream
-		let desired_keystream = vec![21u8; 8];
 
 		// create possible keystreams
 		let mut keystream_0 = vec![0u8; 1000000 * 8];
