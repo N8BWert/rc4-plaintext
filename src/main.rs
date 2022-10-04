@@ -32,7 +32,7 @@ use std::{env, time::{Instant, Duration}, sync::{Arc, Mutex, mpsc::channel}, thr
 /// 	if false then the search will start from make of 255 and work down
 /// 4. (optional) the drop_n before generating the keystream
 /// 5. (optional) --cpu or --gpu
-/// 5. (optional) number of threads to utilize in the threadpool (or threads per gpu block)
+/// 6. (optional) number of threads to utilize in the threadpool (or threads per gpu block)
 /// 7. (optional) number of gpu blocks (GPU ONLY)
 /// 
 ///  ./target/release/rc4_pt_attack {key hex mask} {8 byte keystream} {start from bottom}
