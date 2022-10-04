@@ -7,20 +7,7 @@
 mod rc4;
 
 use threadpool::ThreadPool;
-use std::{
-	env,
-	time::{
-        Instant,
-        Duration,
-    },
-	sync::{
-		Arc,
-		Mutex,
-		mpsc::channel
-	},
-    thread,
-    error::Error,
-};
+use std::{env, time::{Instant, Duration}, sync::{Arc, Mutex, mpsc::channel}, thread, error::Error};
 
 #[allow(unused)] const ONE_UNKNOWNS: u128 = 1000000;
 #[allow(unused)] const TWO_UNKNOWNS: u128 = 1000000;
