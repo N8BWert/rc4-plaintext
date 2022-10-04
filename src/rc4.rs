@@ -183,6 +183,7 @@ pub fn change_key(key: &mut Key, add: bool) {
 	}
 }
 
+#[allow(dead_code)]
 fn check_long_u8_slice_for_keystream(slice: &[u8], keystream: &Vec<u8>) -> u128 {
 	for i in (0..slice.len()-1).step_by(8) {
 		'inner: for j in 0..8 {
@@ -200,6 +201,7 @@ fn check_long_u8_slice_for_keystream(slice: &[u8], keystream: &Vec<u8>) -> u128 
 	return 0;
 }
 
+#[allow(dead_code)]
 pub fn find_correct_key(keys: Vec<u8>, keystreams: Vec<u8>, send_order: Vec<usize>, recv_order: Vec<usize>, desired_keystream: Vec<u8>, key_length: usize, blocks: u128) -> Vec<u8> {
 	// example receive to send mapping:
 	// idx:  0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,15

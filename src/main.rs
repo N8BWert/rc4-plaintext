@@ -1,7 +1,8 @@
-#[macro_use]
-extern crate rustacuda;
-extern crate rustacuda_derive;
-extern crate rustacuda_core;
+#[cfg(feature="gpu_enabled")] #[macro_use] extern crate rustacuda;
+#[cfg(feature="gpu_enabled")] extern crate rustacuda_derive;
+#[cfg(feature="gpu_enabled")] extern crate rustacuda_core;
+#[cfg(feature="gpu_enabled")] use rustacuda::prelude::*;
+#[cfg(feature="gpu_enabled")] use std::ffi::CString;
 
 mod rc4;
 
@@ -19,18 +20,17 @@ use std::{
 	},
     thread,
     error::Error,
-    ffi::CString,
 };
-use rustacuda::prelude::*;
 
-const ONE_UNKNOWNS: u128 = 1000000;
-const TWO_UNKNOWNS: u128 = 1000000;
-const THREE_UNKNOWNS: u128 = 17000000;
-const FOUR_UNKNOWNS: u128 = 4295000000;
-const FIVE_UNKNOWNS: u128 = 1099512000000;
-const SIX_UNKNOWNS: u128 = 281475000000000;
-const SEVEN_UNKNOWNS: u128 = 72057590000000000;
-const EIGHT_UNKNOWNS: u128 = 18446740000000000000;
+#[allow(unused)] const ONE_UNKNOWNS: u128 = 1000000;
+#[allow(unused)] const TWO_UNKNOWNS: u128 = 1000000;
+#[allow(unused)] const THREE_UNKNOWNS: u128 = 17000000;
+#[allow(unused)] const FOUR_UNKNOWNS: u128 = 4295000000;
+#[allow(unused)] const FIVE_UNKNOWNS: u128 = 1099512000000;
+#[allow(unused)] const SIX_UNKNOWNS: u128 = 281475000000000;
+#[allow(unused)] const SEVEN_UNKNOWNS: u128 = 72057590000000000;
+#[allow(unused)] const EIGHT_UNKNOWNS: u128 = 18446740000000000000;
+
 
 
 /// a multithreaded implementation of a rc4 plaintext attack
@@ -77,8 +77,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     if !cpu {
         let cpu_gpu_string = args.get(5).unwrap();
         cpu = match &cpu_gpu_string[..] {
-            "-cpu" | "cpu" | "-CPU" | "CPU" | "-c" | "-C" => true,
-            "-gpu" | "gpu" | "-GPU" | "GPU" | "-g" | "-G" => false,
+            "-cpu" | "cpu" | "-CPU" | "CPU" | "-c" | "-C" | "--cpu" | "--CPU" => true,
+            "-gpu" | "gpu" | "-GPU" | "GPU" | "-g" | "-G" | "--gpu" | "--GPU" => false,
             _ => panic!("unknown compute device target"),
         };
     }
@@ -86,23 +86,110 @@ fn main() -> Result<(), Box<dyn Error>> {
     let max_iterations: u128 = 256u128.pow((key.mask_vec.len()) as u32);
     let desired_keystream_length = desired_keystream.len();
 
-    if desired_keystream.len() != 8 {
-        println!("unnacceptable desired keystream length for gpu, execution will commence on cpu");
-        cpu = true;
-    }
+    // if desired_keystream.len() != 8 {
+    //     println!("unnacceptable desired keystream length for gpu, execution will commence on cpu");
+    //     cpu = true;
+    // }
 
-    if !cpu {
-        if key.key_vec.len() != 72 && key.key_vec.len() != 104 {
-            println!("CUDA kernel does not exist for given key length, switching to cpu");
-            cpu = true;
+    // if !cpu {
+    //     if key.key_vec.len() != 72 && key.key_vec.len() != 104 {
+    //         println!("CUDA kernel does not exist for given key length, switching to cpu");
+    //         cpu = true;
+    //     }
+
+    //     if drop_n != 0 && drop_n != 256 && drop_n != 267 {
+    //         println!("CUDA kernel does not exist for given drop_n, switching to cpu");
+    //         cpu = true;
+    //     }
+    // }
+
+    #[cfg(not(feature="gpu_enabled"))]
+    if cpu {
+        let thread_num = match args.get(6) {
+            Some(val) => val.strip_prefix("--threads=").unwrap().parse().unwrap(),
+            _ => 1,
+        };
+
+        // Multithreading stuff //
+
+        // ThreadPool
+        let n_workers = thread_num;
+        let pool = ThreadPool::new(n_workers);
+
+        // Shared values
+        // although it will not be edited it is necessary to make a mutex lock on the desired_keystream vector
+        let shared_desired_keystream = Arc::new(Mutex::new(desired_keystream));
+
+        let no_key_found_string = "KEY WAS NOT FOUND";
+
+        // channel for returning the correct key
+        let (tx, rx) = channel();
+
+        for i in 0..max_iterations {
+            let current_key = key.deep_copy();
+
+            let shared_desired_keystream = shared_desired_keystream.clone();
+
+            let tx = tx.clone();
+            pool.execute(move || {
+                if i % 0x1000000 == 0 {
+                    println!("iteration: {i:X}");
+                    let key_hex_representation = rc4::u8_to_hex(&current_key.key_vec, current_key.key_vec.len() as u32);
+                    println!("current key value: {key_hex_representation}");
+                }
+
+                let mut s = rc4::ksa(&current_key.key_vec);
+                let ks = rc4::prga(&mut s, desired_keystream_length as u32, drop_n);
+
+                if i >= max_iterations - 1 {
+                    let no_key_found_string = no_key_found_string.to_string();
+                    tx.send(no_key_found_string).unwrap();
+                }
+
+                if rc4::compare_ks(&ks, & *shared_desired_keystream.lock().unwrap()) {
+                    println!("found kex at {i}");
+                    let key_hex_representation = rc4::u8_to_hex(&current_key.key_vec, current_key.key_vec.len() as u32);
+                    tx.send(key_hex_representation).unwrap();
+                    println!("key send");
+                }
+            });
+            // ensure pool doesn't get overloaded with queued tasks
+            if i % 0x1000 == 0 {
+                pool.join();
+            }
+            rc4::change_key(&mut key, start_from_bottom);
+
+            let received_val = rx.try_recv();
+            match received_val {
+                Ok(desired_key_hex) => {
+                    println!("found key: {desired_key_hex}");
+                    let elapsed = now.elapsed();
+                    println!("exeuction took: {:.2?}", elapsed);
+                    return Ok(());
+                },
+                _ => continue,
+            };
         }
 
-        if drop_n != 0 && drop_n != 256 && drop_n != 267 {
-            println!("CUDA kernel does not exist for given drop_n, switching to cpu");
-            cpu = true;
+        loop {
+            let received_val = rx.try_recv();
+            match received_val {
+                Ok(desired_key_hex) => {
+                    println!("found key: {desired_key_hex}");
+                    let elapsed = now.elapsed();
+                    println!("execution took: {:.2?}", elapsed);
+                    return Ok(());
+                },
+                _ => {
+                    thread::sleep(Duration::from_secs(1));
+                },
+            }
         }
+    } else {
+        panic!("cannot run on gpu if not enabled");
     }
 
+    #[cfg(feature="gpu_enabled")]
     if cpu {
         let thread_num = match args.get(6) {
             Some(val) => val.strip_prefix("--threads=").unwrap().parse().unwrap(),
@@ -262,10 +349,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             let stream = Stream::new(StreamFlags::NON_BLOCKING, None)?;
             streams_done.push(false);
             stream.add_callback(Box::new(|status| {
+                println!("Device status is {:?}", status);
                 match status {
-                    _cuda_error => panic!("Device status is {:?}", status),
-                    _ => streams_done[i] = true,
-                }
+                    Ok(_) => streams_done[i] = true,
+                    Err(_) => panic!("error with device"),
+                };
             }));
 
             // begin the kernel
