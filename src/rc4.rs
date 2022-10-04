@@ -182,6 +182,43 @@ pub fn change_key(key: &mut Key, add: bool) {
 	}
 }
 
+pub fn change_key_with_return(key: &mut Key, add: bool) -> Key {
+	let return_key = key.deep_copy();
+	change_key(key, add);
+	return return_key
+}
+
+pub fn check_long_u8_slice_for_keystream(slice: &[u8], keystream: Vec<u8>) -> u128 {
+	for i in (0..slice.len()).step_by(8) {
+		for j in 0..8 {
+			if slice[i+j] != keystream[j] {
+				break;
+			}
+		}
+		return i as u128;
+	}
+	return 0;
+}
+
+pub fn find_correct_key(keys: Vec<u8>, keystreams: Vec<u8>, task_order: Vec<usize>, end_order: Vec<usize>, desired_keystream: Vec<u8>, key_length: usize) -> Vec<u8> {
+	let correct_keystream_idx = check_long_u8_slice_for_keystream(&keystreams[..], desired_keystream);
+	let end_index = correct_keystream_idx / 8000000;
+	let found_task = end_order[end_index as usize];
+	let mut start_task_idx = 0;
+	for i in (0..=found_task).rev() {
+		if task_order[i] == found_task {
+			start_task_idx = i;
+			break;
+		}
+	}
+	let key_start_idx = (key_length * start_task_idx) + (((correct_keystream_idx % 8000000) / 8) as usize);
+	let key_vec = Vec::with_capacity(key_length);
+	for i in 0..key_length {
+		key_vec.push(keys[key_start_idx + i]);
+	}
+	return key_vec;
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
