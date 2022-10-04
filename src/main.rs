@@ -73,22 +73,22 @@ fn main() -> Result<(), Box<dyn Error>> {
     let max_iterations: u128 = 256u128.pow((key.mask_vec.len()) as u32);
     let desired_keystream_length = desired_keystream.len();
 
-    // if desired_keystream.len() != 8 {
-    //     println!("unnacceptable desired keystream length for gpu, execution will commence on cpu");
-    //     cpu = true;
-    // }
+    if desired_keystream.len() != 8 {
+        println!("unnacceptable desired keystream length for gpu, execution will commence on cpu");
+        cpu = true;
+    }
 
-    // if !cpu {
-    //     if key.key_vec.len() != 72 && key.key_vec.len() != 104 {
-    //         println!("CUDA kernel does not exist for given key length, switching to cpu");
-    //         cpu = true;
-    //     }
+    if !cpu {
+        if key.key_vec.len() != 72 && key.key_vec.len() != 104 {
+            println!("CUDA kernel does not exist for given key length, switching to cpu");
+            cpu = true;
+        }
 
-    //     if drop_n != 0 && drop_n != 256 && drop_n != 267 {
-    //         println!("CUDA kernel does not exist for given drop_n, switching to cpu");
-    //         cpu = true;
-    //     }
-    // }
+        if drop_n != 0 && drop_n != 256 && drop_n != 267 {
+            println!("CUDA kernel does not exist for given drop_n, switching to cpu");
+            cpu = true;
+        }
+    }
 
     #[cfg(not(feature="gpu_enabled"))]
     if cpu {
