@@ -18,8 +18,6 @@ use std::{env, time::{Instant, Duration}, sync::{Arc, Mutex, mpsc::channel}, thr
 #[allow(unused)] const SEVEN_UNKNOWNS: u128 = 72057590000000000;
 #[allow(unused)] const EIGHT_UNKNOWNS: u128 = 18446740000000000000;
 
-
-
 /// a multithreaded implementation of a rc4 plaintext attack
 /// 
 /// arguments should be provided as follows:
@@ -41,7 +39,7 @@ use std::{env, time::{Instant, Duration}, sync::{Arc, Mutex, mpsc::channel}, thr
 /// 
 /// if no string is found the found key will read: "KEY WAS NOT FOUND"
 fn main() -> Result<(), Box<dyn Error>> {
-    let cuda_env = "CUDA_ENV";
+    let cuda_env = "CUDA_LIBRARY_PATH";
     let mut cpu = match env::var(cuda_env) {
         Ok(_) => false,
         Err(_) => true,
