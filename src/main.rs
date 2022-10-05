@@ -330,6 +330,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             (128, 0) => CString::new("rc4_keystream_gen_128_drop_0").unwrap(),
             (128, 256) => CString::new("rc4_keystream_gen_128_drop_256").unwrap(),
             (128, 267) => CString::new("rc4_keystream_gen_128_drop_267").unwrap(),
+            (32, 0) => CString::new("rc4_keystream_gen_32_drop_0").unwrap(),
+            (32, 256) => CString::new("rc4_keystream_gen_32_drop_256").unwrap(),
+            (32, 267) => CString::new("rc4_keystream_gen_32_drop_267").unwrap(),
             _ => panic!("unallowed key length - drop_n combination for gpu compute"),
         };
         let kernel_function = module.get_function(&function_name)?;
