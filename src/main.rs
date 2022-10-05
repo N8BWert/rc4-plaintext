@@ -17,6 +17,14 @@ use std::{env, time::{Instant, Duration}, sync::{Arc, Mutex, mpsc::channel}, thr
 #[allow(unused)] const SIX_UNKNOWNS: u128 = 281475000000000;
 #[allow(unused)] const SEVEN_UNKNOWNS: u128 = 72057590000000000;
 #[allow(unused)] const EIGHT_UNKNOWNS: u128 = 18446740000000000000;
+#[allow(unused)] const NINE_UNKNOWNS: u128 = 4722366000000000000000;
+#[allow(unused)] const TEN_UNKNOWNS: u128 = 1208926000000000000000000;
+#[allow(unused)] const ELEVEN_UNKNOWNS: u128 = 309485000000000000000000000;
+#[allow(unused)] const TWELVE_UNKNOWNS: u128 = 79228160000000000000000000000;
+#[allow(unused)] const THIRTEEN_UNKNOWNS: u128 = 20282410000000000000000000000000;
+#[allow(unused)] const FOURTEEN_UNKNOWNS: u128 = 5192297000000000000000000000000000;
+#[allow(unused)] const FIFTEEN_UNKNOWNS: u128 = 1329228000000000000000000000000000000;
+#[allow(unused)] const SIXTEEN_UNKNOWNS: u128 = std::u128::MAX;
 
 /// a multithreaded implementation of a rc4 plaintext attack
 /// 
@@ -278,6 +286,14 @@ fn main() -> Result<(), Box<dyn Error>> {
             6 => Vec::with_capacity((SIX_UNKNOWNS * 8) as usize),
             7 => Vec::with_capacity((SEVEN_UNKNOWNS * 8) as usize),
             8 => Vec::with_capacity((EIGHT_UNKNOWNS * 8) as usize),
+            9 => Vec::with_capacity((NINE_UNKNOWNS * 8) as usize),
+            10 => Vec::with_capacity((TEN_UNKNOWNS * 8) as usize),
+            11 => Vec::with_capacity((ELEVEN_UNKNOWNS * 8) as usize),
+            12 => Vec::with_capcity((TWELVE_UNKNOWNS * 8) as usize),
+            13 => Vec::with_capacity((THIRTEEN_UNKNOWNS * 8) as usize),
+            14 => Vec::with_capacity((FOURTEEN_UNKNOWNS * 8) as usize),
+            15 => Vec::with_capacity((FIFTEEN_UNKNOWNS * 8) as usize),
+            16 => Vec::with_capacity((SIXTEEN_UNKNOWNS * 8) as usize),
             _ => panic!("unsupported number of unknowns :("),
         };
 
@@ -308,6 +324,12 @@ fn main() -> Result<(), Box<dyn Error>> {
             (104, 0) => CString::new("rc4_keystream_gen_104_drop_0").unwrap(),
             (104, 256) => CString::new("rc4_keystream_gen_104_drop_256").unwrap(),
             (104, 267) => CString::new("rc4_keystream_gen_104_drop_267").unwrap(),
+            (64, 0) => CString::new("rc4_keystream_gen_64_drop_0").unwrap(),
+            (64, 256) => CString::new("rc4_keystream_gen_64_drop_256").unwrap(),
+            (64, 267) => CString::new("rc4_keystream_gen_64_drop_267").unwrap(),
+            (128, 0) => CString::new("rc4_keystream_gen_128_drop_0").unwrap(),
+            (128, 256) => CString::new("rc4_keystream_gen_128_drop_256").unwrap(),
+            (128, 267) => CString::new("rc4_keystream_gen_128_drop_267").unwrap(),
             _ => panic!("unallowed key length - drop_n combination for gpu compute"),
         };
         let kernel_function = module.get_function(&function_name)?;
@@ -347,7 +369,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             unsafe {
                 let result = launch!(kernel_function<<<1, threads, 0, stream>>>(
                     key_buffer.as_device_ptr(),
-                    1000000,
                     keystream_buffer.as_device_ptr()
                 ));
                 result?;
@@ -386,7 +407,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                     unsafe {
                         let result = launch!(kernel_function<<<1, threads, 0,stream>>>(
                             key_buffers[i].as_device_ptr(),
-                            1000000,
                             keystream_buffers[i].as_device_ptr()
                         ));
                         result?;
