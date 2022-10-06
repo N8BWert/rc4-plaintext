@@ -161,6 +161,7 @@ pub fn mask_to_key(mask: &str, start_from_bottom: bool) -> Key {
 	return Key {key_vec: key_vec, mask_vec: unknown_indexes};
 }
 
+// Important: When the key reaches the end of its line it will restart from the beginning
 pub fn change_key(key: &mut Key, add: bool) {
 	if add {
 		for val in key.mask_vec.iter().rev() {
@@ -184,7 +185,7 @@ pub fn change_key(key: &mut Key, add: bool) {
 }
 
 #[allow(dead_code)]
-fn check_long_u8_slice_for_keystream(slice: &[u8], keystream: &Vec<u8>) -> u128 {
+pub fn check_long_u8_slice_for_keystream(slice: &[u8], keystream: &Vec<u8>) -> (bool, u128) {
 	for i in (0..slice.len()-1).step_by(8) {
 		'inner: for j in 0..8 {
 			let val1 = slice[i+j];
@@ -194,11 +195,11 @@ fn check_long_u8_slice_for_keystream(slice: &[u8], keystream: &Vec<u8>) -> u128 
 			}
 
 			if j == 7 {
-				return i as u128;
+				return (true, i as u128);
 			}
 		}
 	}
-	return 0;
+	return (false, 0);
 }
 
 #[allow(dead_code)]
@@ -208,7 +209,7 @@ pub fn find_correct_key(keys: Vec<u8>, keystreams: Vec<u8>, send_order: Vec<usiz
 	// send: 0, 1, 2, 3, 4, 3, 2, 2, 1, 4, 0, X, X, X, X, X
 	// recv: X, X, X, X, X, 3, 2, 2, 1, 4, 0, 3, 2, 4, 0, 1
 	// sndx: X, X, X, X, X, 3, 2, 6, 1, 4, 0, 5, 7, 9,10, 8
-	let match_idx = check_long_u8_slice_for_keystream(&keystreams[..], &desired_keystream);
+	let (_, match_idx) = check_long_u8_slice_for_keystream(&keystreams[..], &desired_keystream);
 	let group_idx = match_idx / 8000000;
 	let rel_send_group_idx = group_idx + blocks;
 
@@ -230,6 +231,18 @@ pub fn find_correct_key(keys: Vec<u8>, keystreams: Vec<u8>, send_order: Vec<usiz
 	let key_start = ((key_group as u128) * (key_length as u128) * 1000000) + (rel_idx * (key_length as u128));
 
 	return keys[(key_start as usize)..((key_start as usize) + key_length)].to_vec();
+}
+
+#[allow(dead_code)]
+pub fn generate_keys(start_key: &mut Key, add: bool) -> Vec<u8> {
+	let mut out_vec = Vec::with_capacity(start_key.key_vec.len() * 1000000);
+	for _ in 0..1000000 {
+		for val in start_key.key_vec.iter() {
+			out_vec.push(*val);
+		}
+		change_key(start_key, add);
+	}
+	return out_vec
 }
 
 #[cfg(test)]
@@ -464,6 +477,26 @@ mod tests {
 	}
 
 	#[test]
+	fn test_change_key_add_overflow() {
+		let mut key = Key { key_vec: vec![255, 255, 255, 255],
+								 mask_vec: vec![0, 1]};
+		change_key(&mut key, true);
+
+		let expected_key_val = vec![0, 0, 255, 255];
+		assert_eq!(key.key_vec, expected_key_val);
+	}
+
+	#[test]
+	fn test_change_key_subtract_overflow() {
+		let mut key = Key { key_vec: vec![0, 0, 0, 0],
+								 mask_vec: vec![0, 1]};
+		change_key(&mut key, false);
+
+		let expected_key_val = vec![255, 255, 0, 0];
+		assert_eq!(key.key_vec, expected_key_val);
+	}
+
+	#[test]
 	fn test_key_deep_copy() {
 		let key_vec = vec![1, 2, 3, 4, 5, 6];
 		let mask_vec = vec![1, 3, 4];
@@ -482,7 +515,7 @@ mod tests {
 							   24, 25, 26, 27, 28, 29, 30, 31,
 							   32, 33, 34, 35, 36, 37, 38, 39];
 		let desired_keystream = vec![16, 17, 18, 19, 20, 21, 22, 23];
-		let found_idx = check_long_u8_slice_for_keystream(&keystream_slice[..], &desired_keystream);
+		let (_, found_idx) = check_long_u8_slice_for_keystream(&keystream_slice[..], &desired_keystream);
 
 		let expected_idx = 16;
 		assert_eq!(found_idx, expected_idx);

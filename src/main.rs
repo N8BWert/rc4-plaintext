@@ -2,6 +2,7 @@
 #[cfg(feature="gpu_enabled")] extern crate rustacuda_derive;
 #[cfg(feature="gpu_enabled")] extern crate rustacuda_core;
 #[cfg(feature="gpu_enabled")] use rustacuda::prelude::*;
+#[cfg(feature="gpu_enabled")] use rustacuda::stream::StreamFlags;
 #[cfg(feature="gpu_enabled")] use std::ffi::CString;
 
 mod rc4;
@@ -276,36 +277,26 @@ fn main() -> Result<(), Box<dyn Error>> {
             _ => 1,
         };
 
-        let mut keystreams: Vec<u8> = match key.mask_vec.len() {
-            1 => Vec::with_capacity((ONE_UNKNOWNS * 8) as usize),
-            2 => Vec::with_capacity((TWO_UNKNOWNS * 8) as usize),
-            3 => Vec::with_capacity((THREE_UNKNOWNS * 8) as usize),
-            4 => Vec::with_capacity((FOUR_UNKNOWNS * 8) as usize),
-            5 => Vec::with_capacity((FIVE_UNKNOWNS * 8) as usize),
-            6 => Vec::with_capacity((SIX_UNKNOWNS * 8) as usize),
-            7 => Vec::with_capacity((SEVEN_UNKNOWNS * 8) as usize),
-            8 => Vec::with_capacity((EIGHT_UNKNOWNS * 8) as usize),
-            9 => Vec::with_capacity((NINE_UNKNOWNS * 8) as usize),
-            10 => Vec::with_capacity((TEN_UNKNOWNS * 8) as usize),
-            11 => Vec::with_capacity((ELEVEN_UNKNOWNS * 8) as usize),
-            12 => Vec::with_capacity((TWELVE_UNKNOWNS * 8) as usize),
-            13 => Vec::with_capacity((THIRTEEN_UNKNOWNS * 8) as usize),
-            14 => Vec::with_capacity((FOURTEEN_UNKNOWNS * 8) as usize),
-            15 => Vec::with_capacity((FIFTEEN_UNKNOWNS * 8) as usize),
-            _ => panic!("unsupported number of unknowns :("),
+        let total_keystreams = match key.mask_vec.len() {
+            1 => ONE_UNKNOWNS,
+            2 => TWO_UNKNOWNS,
+            3 => THREE_UNKNOWNS,
+            4 => FOURTEEN_UNKNOWNS,
+            5 => FIVE_UNKNOWNS,
+            6 => SIX_UNKNOWNS,
+            7 => SEVEN_UNKNOWNS,
+            8 => EIGHT_UNKNOWNS,
+            9 => NINE_UNKNOWNS,
+            10 => TEN_UNKNOWNS,
+            11 => ELEVEN_UNKNOWNS,
+            12 => TWELVE_UNKNOWNS,
+            13 => THIRTEEN_UNKNOWNS,
+            14 => FOURTEEN_UNKNOWNS,
+            15 => FIFTEEN_UNKNOWNS,
+            _ => panic!("unspported mask size for key"),
         };
 
         let key_length = key.key_vec.len();
-
-        // Create all of the possible strings
-        println!("creating all possible strings");
-        let mut possible_keys: Vec<u8> = Vec::with_capacity((max_iterations as usize) * key.key_vec.len());
-        for _ in 0..max_iterations {
-            for val in key.key_vec.iter() {
-                possible_keys.push(*val);
-            }
-            rc4::change_key(&mut key, start_from_bottom);
-        }
 
         // Begin rustacuda code
         rustacuda::init(CudaFlags::empty())?;
@@ -334,39 +325,20 @@ fn main() -> Result<(), Box<dyn Error>> {
             _ => panic!("unallowed key length - drop_n combination for gpu compute"),
         };
         let kernel_function = module.get_function(&function_name)?;
-        
-        // The CUDA code will work as follows:
-        // 1. all of the provided blocks will be given 1000000 keystreams to compute
-        // 2. as each block completes its 1000000 keystreams the stream it is on will run a callback
-        // to tell the main thread that the keystreams have been computed.
-        // 3. the main thread will copy the given 1000000 keystreams into a buffer of keystreams to process.
-        // 4. the main thread will then copy the next 10000000 keys into the previously used device buffer for the given stream.
-        // 5. the main thread will tell the block given before to launch the rc4 function again
-        // 6. upon receiving the first 1000000 keystreams a second cpu thread will be deployed to begin processing the keystreams.
-        // Instantiate vectors for holding
-        let mut key_buffers = Vec::with_capacity(blocks);
-        let mut keystream_buffers = Vec::with_capacity(blocks);
-        let mut streams = Vec::with_capacity(blocks);
-        let mut streams_done = Vec::with_capacity(blocks);
 
-        let mut task_order = Vec::new();
-        let mut end_order = Vec::new();
+        let mut current_key = key.deep_copy();
+        let mut stream_done = Vec::with_capacity(blocks);
+        let mut key_buffers: Vec<DeviceBuffer<u8>> = Vec::with_capacity(blocks);
+        let mut keystream_buffers: Vec<DeviceBuffer<u8>> = Vec::with_capacity(blocks);
 
-        // Initialize all of the buffers and begin the kernels
         for i in 0..blocks {
-            let mut key_buffer = DeviceBuffer::from_slice(&possible_keys[(i*1000000)..((i+1)*1000000)]).unwrap();
+            let keys = rc4::generate_keys(&mut current_key, start_from_bottom);
+            let mut key_buffer = DeviceBuffer::from_slice(&keys[..]).unwrap();
+            drop(keys);
             let mut keystream_buffer = DeviceBuffer::from_slice(&[0u8; 8000000]).unwrap();
             let stream = Stream::new(StreamFlags::NON_BLOCKING, None)?;
-            streams_done.push(false);
-            stream.add_callback(Box::new(|status| {
-                println!("Device status is {:?}", status);
-                match status {
-                    Ok(_) => streams_done[i] = true,
-                    Err(_) => panic!("error with device"),
-                };
-            }));
+            stream_done.push(false);
 
-            // begin the kernel
             unsafe {
                 let result = launch!(kernel_function<<<1, threads, 0, stream>>>(
                     key_buffer.as_device_ptr(),
@@ -375,73 +347,67 @@ fn main() -> Result<(), Box<dyn Error>> {
                 result?;
             }
 
+            stream.add_callback(Box::new(|status| {
+                println!("Device status is {:?}", status);
+                match status {
+                    Ok(_) => stream_done[i] = true,
+                    Err(_) => panic!("error with device"),
+                };
+            }))?;
+
             key_buffers.push(key_buffer);
             keystream_buffers.push(keystream_buffer);
-            streams.push(stream);
-            task_order.push(i);
         }
 
-        // Continue to check completed streams and move their values to the cpu thread dedicated to checking for
-        // matches.
         let mut current_iteration: u128 = (blocks * 1000000) as u128;
-        while current_iteration < max_iterations {
+        while current_iteration < total_keystreams {
             for i in 0..blocks {
-                if streams_done[i] {
-                    // Copy all values from out keystream buffer to the out buffer
-                    let mut out_buff = [0u8; 1000000];
-                    keystream_buffers[i].copy_to(&mut out_buff)?;
-                    for val in out_buff {
-                        keystreams.push(val);
-                    }
-                    // Start next launch
-                    key_buffers[i] = DeviceBuffer::from_slice(&possible_keys[(current_iteration as usize)..((current_iteration + 1000000) as usize)]).unwrap();
-                    keystream_buffers[i] = DeviceBuffer::from_slice(&[0u8; 8000000]).unwrap();
-                    let stream = Stream::new(StreamFlags::NON_BLOCKING, None)?;
-                    stream.add_callback(Box::new(|status| {
-                        println!("Device status is {:?}", status);
-                        match status {
-                            Ok(_) => streams_done[i] = true,
-                            Err(_) => panic!("error with device"),
-                        };
-                    }));
+                if stream_done[i] {
+                    let mut found_keystreams = [0u8; 8000000];
+                    keystream_buffers[i].copy_to(&mut found_keystreams).unwrap();
+                    let (found, idx) = rc4::check_long_u8_slice_for_keystream(& found_keystreams[..], &desired_keystream);
+                    if found {
+                        let mut correct_key = [0u8; 32];
+                        let mut iter = key_buffers[i].chunks(key_length);
+                        for _ in 0..idx {
+                            iter.next().unwrap();
+                        }
+                        iter.next().unwrap().copy_to(&mut correct_key).unwrap();
+                        let correct_key_hex = rc4::u8_to_hex(& correct_key.to_vec(), key_length as u32);
+                        println!("Found the key: {correct_key_hex}");
+                        return Ok(());
+                    } else {
+                        current_iteration += 1000000;
+                        let keys = rc4::generate_keys(&mut current_key, start_from_bottom);
+                        let mut key_buffer = DeviceBuffer::from_slice(&keys[..]).unwrap();
+                        drop(keys);
+                        let mut keystream_buffer = DeviceBuffer::from_slice(&[0u8; 8000000]).unwrap();
+                        let stream = Stream::new(StreamFlags::NON_BLOCKING, None)?;
+                        stream_done[i] = false;
 
-                    unsafe {
-                        let result = launch!(kernel_function<<<1, threads, 0,stream>>>(
-                            key_buffers[i].as_device_ptr(),
-                            keystream_buffers[i].as_device_ptr()
-                        ));
-                        result?;
-                    }
+                        unsafe {
+                            let result = launch!(kernel_function<<<1, threads, 0, stream>>>(
+                                key_buffer.as_device_ptr(),
+                                keystream_buffer.as_device_ptr()
+                            ));
+                            result?;
+                        }
 
-                    streams.push(stream);
-                    streams_done[i] = false;
-                    current_iteration += 1000000;
-                    end_order.push(i);
-                    task_order.push(i);
+                        stream.add_callback(Box::new(|status| {
+                            println!("Device status is {:?}", status);
+                            match status {
+                                Ok(_) => stream_done[i] = true,
+                                Err(_) => panic!("error with device"),
+                            };
+                        }))?;
+
+                        key_buffers[i] = key_buffer;
+                        keystream_buffers[i] = keystream_buffer;
+                    }
                 }
             }
         }
-
-        for i in 0..blocks {
-            while streams_done[i] == false {
-                continue;
-            }
-        }
-
-        for i in 0..blocks {
-            // Copy all values from out keystream buffer to the out buffer
-            let mut out_buff = [0u8; 8000000];
-            keystream_buffers[i].copy_to(&mut out_buff)?;
-            for val in out_buff {
-                keystreams.push(val);
-            }
-            task_order.push(i);
-        }
-
-        println!("looking through generated keystreams");
-        let correct_key = rc4::find_correct_key(possible_keys, keystreams, task_order, end_order, desired_keystream, key_length, blocks as u128);
-        let correct_key_hex = rc4::u8_to_hex(&correct_key, key_length as u32);
-        println!("found key of: {correct_key_hex}");
-        return Ok(());
+        println!("Could not find the key :(");
+        return Ok(())
     }
 }
