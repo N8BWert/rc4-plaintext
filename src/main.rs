@@ -24,7 +24,6 @@ use std::{env, time::{Instant, Duration}, sync::{Arc, Mutex, mpsc::channel}, thr
 #[allow(unused)] const THIRTEEN_UNKNOWNS: u128 = 20282410000000000000000000000000;
 #[allow(unused)] const FOURTEEN_UNKNOWNS: u128 = 5192297000000000000000000000000000;
 #[allow(unused)] const FIFTEEN_UNKNOWNS: u128 = 1329228000000000000000000000000000000;
-#[allow(unused)] const SIXTEEN_UNKNOWNS: u128 = std::u128::MAX;
 
 /// a multithreaded implementation of a rc4 plaintext attack
 /// 
@@ -289,11 +288,10 @@ fn main() -> Result<(), Box<dyn Error>> {
             9 => Vec::with_capacity((NINE_UNKNOWNS * 8) as usize),
             10 => Vec::with_capacity((TEN_UNKNOWNS * 8) as usize),
             11 => Vec::with_capacity((ELEVEN_UNKNOWNS * 8) as usize),
-            12 => Vec::with_capcity((TWELVE_UNKNOWNS * 8) as usize),
+            12 => Vec::with_capacity((TWELVE_UNKNOWNS * 8) as usize),
             13 => Vec::with_capacity((THIRTEEN_UNKNOWNS * 8) as usize),
             14 => Vec::with_capacity((FOURTEEN_UNKNOWNS * 8) as usize),
             15 => Vec::with_capacity((FIFTEEN_UNKNOWNS * 8) as usize),
-            16 => Vec::with_capacity((SIXTEEN_UNKNOWNS * 8) as usize),
             _ => panic!("unsupported number of unknowns :("),
         };
 
