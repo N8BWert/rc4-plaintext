@@ -7,3 +7,8 @@ edition = "2021"
 
 [dependencies]
 threadpool = "1.8.1"
+
+[dev-dependencies]
+rustacuda = "0.1"
+rustacuda_derive = "0.1"
+rustacuda_core = "0.1"
